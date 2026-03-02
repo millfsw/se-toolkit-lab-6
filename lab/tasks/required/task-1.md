@@ -154,17 +154,17 @@ Title: `[Task] Observe System Component Interaction`
    [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
 
    ```terminal
-   docker compose --env-file .env.docker.secret ps
+   docker compose --env-file .env.docker.secret ps --format "table {{.Service}}\t{{.Status}}"
    ```
 
    You should see all four services running with the status `Up`:
 
    ```terminal
-   NAME       ...   STATUS
-   app        ...   Up
-   caddy      ...   Up
-   pgadmin    ...   Up
-   postgres   ...   Up (healthy)
+   SERVICE    STATUS
+   app        Up 50 seconds
+   caddy      Up 49 seconds
+   pgadmin    Up 50 seconds
+   postgres   Up 55 seconds (healthy)
    ```
 
    <!-- TODO link to this generic troubleshooting section in wiki -->
