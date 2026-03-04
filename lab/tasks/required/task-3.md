@@ -47,13 +47,17 @@ Title: `[Task] Add Front-end`
 
 ### 1.3. Part A: Dev version
 
-<!-- no toc -->
-- [1.3.1. Run the dev server](#131-run-the-dev-server)
-- [1.3.2. Edit a source file and observe hot reload](#132-edit-a-source-file-and-observe-hot-reload)
-
 > [!NOTE]
 > A dev server serves the front-end with hot reload: the browser updates automatically when you save a file.
 > This is for local development only — it is not meant to be deployed to production.
+
+Complete these steps:
+
+<!-- no toc -->
+1. [Navigate to the front-end project directory](#131-navigate-to-the-front-end-project-directory)
+2. [Configure the environment for frontend](#132-configure-the-environment-for-frontend)
+3. [Start the dev server](#133-start-the-dev-server)
+4. [Edit a source file and observe hot reload](#132-edit-a-source-file-and-observe-hot-reload)
 
 #### 1.3.1. Navigate to the front-end project directory
 
@@ -77,12 +81,12 @@ Title: `[Task] Add Front-end`
    [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
 
    ```terminal
-   cp .env.example .env
+   cp .env.example .env.secret
    ```
 
-2. [Open the file](../../../wiki/vs-code.md#open-the-file): [`frontend/.env`](../../../frontend/.env).
+2. [Open the file](../../../wiki/vs-code.md#open-the-file): `frontend/.env.secret`.
 
-3. Set `VITE_API_TARGET` to the URL of your back-end API, for example `http://<your-vm-ip-address>:<caddy-port>`.
+3. Set `VITE_API_TARGET` to the [URL](../../../wiki/computer-networks.md#url) of your back-end [API](../../../wiki/api.md#what-is-an-api): `http://<your-vm-ip-address>:<caddy-port>`.
 
    Replace:
 
@@ -90,6 +94,8 @@ Title: `[Task] Add Front-end`
    - [`<caddy-port>`](../../../wiki/caddy.md#caddy-port)
 
 4. To install dependencies,
+
+   <!-- TODO move to the setup? -->
 
    [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
 
@@ -110,12 +116,14 @@ Title: `[Task] Add Front-end`
    The output should be similar to this:
 
    ```terminal
-   Local: http://localhost:5173/
+   ➜  Local:   http://localhost:5173/
    ```
 
-2. Open the [URL](../) shown in the terminal output in a browser.
+2. Open the URL shown in the terminal output in a browser: `http://localhost:5173/`
 
-   Verify that the front-end loads and displays data from the API.
+   Verify that the front-end loads and asks for an API key.
+
+3. Log in to the app
 
 #### 1.3.2. Edit a source file and observe hot reload
 
@@ -269,6 +277,11 @@ Title: `[Task] Add Front-end`
    5. Filter the rows displayed in the table by the selected type.
 
    </details>
+
+<!-- TODO add button for copying the full table as comma-separated CSV 
+
+paste the table in the PR summary
+-->
 
 #### 1.5.2. Verify in the dev server
 
