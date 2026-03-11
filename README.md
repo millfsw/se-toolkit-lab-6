@@ -13,21 +13,32 @@ The lab gets updated regularly, so do [sync your fork with the upstream](https:/
 
 ## Lab story
 
-You have a running Learning Management Service — a backend, a database full of analytics data, and a frontend dashboard. The course is coming to a close and you need to review everything you've learned.
+> "Everybody should implement an agent loop at some point."
 
-Instead of manually reviewing, you'll build a **CLI agent** that can answer questions about the course and about your own system. The agent uses an LLM with tools to read your codebase and query your API.
+You've used AI agents throughout the course — now you'll build one from scratch.
 
-An evaluation benchmark tests your agent with ~30 questions. You can't see the questions upfront — you discover them by running the checker. Each failed question tells you what went wrong, and you fix it. By the time your agent passes, you've reviewed the course material and understood how agents work.
+You have a running Learning Management Service — a backend, a database, and a frontend dashboard. You'll build a **CLI agent** that answers questions about the course and about your own system, evaluated against a hidden benchmark — like building an algorithm against a test suite.
+
+Throughout the course you used agents but never looked under the hood. The risk: you copy-paste in early labs and vibe-code in later ones without understanding what's actually happening. This lab forces understanding at two levels:
+
+1. **Agent mechanics** — you implement the loop (prompt → LLM → tool call → execute → feed result → answer) and see there's no magic.
+2. **Course material** — the benchmark questions cover labs 1–6. To debug a wrong answer, you have to understand the material. The agent is the vehicle; the questions are the test.
+
+By the time your agent passes, you've reviewed everything and understood how agents work.
 
 ## Learning advice
 
-Read the tasks, do the setup properly, work with an agent to help you:
+This lab is different from previous ones. You are not following step-by-step instructions — you are building something and iterating until it works. Use your coding agent to help you understand and plan:
 
-> What do we need to do in Task x? Explain, I want to maximize learning.
+> Read task X. What exactly do we need to deliver? Explain, I want to understand.
 
-> Why is this important? What exactly do we need to do?
+> Why does an agent need a loop? Walk me through the flow.
 
-You need an agent that has access to the whole repo to work effectively.
+> My agent failed this question: "...". Diagnose why and suggest a fix.
+
+The agent you build is simple (~100-200 lines). The learning comes from debugging it against the benchmark — each failure teaches you something about agents or course material.
+
+You need a coding agent that has access to the whole repo to work effectively.
 
 ## Learning outcomes
 
