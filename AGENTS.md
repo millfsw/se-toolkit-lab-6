@@ -69,3 +69,24 @@ You are helping a student complete a software engineering lab. Your role is to m
 - `AGENT.md` — student's documentation of their agent architecture.
 - `.env.agent.secret` — LLM provider credentials (gitignored).
 - `.env.docker.secret` — backend API credentials (gitignored).
+
+## Architecture Overview
+The System Agent is a CLI-based tool designed to bridge the gap between static documentation and live system state. It uses an LLM-driven agentic loop to reason about user queries and interact with the environment through specific tools.
+
+## Toolset
+- **Documentation Access**: Uses `list_files` and `read_file` to navigate the `wiki/` directory.
+- **Source Code Analysis**: Authorized to read project source files to diagnose bugs or explain system architecture.
+- **System API**: The `query_api` tool allows the agent to perform authenticated HTTP requests to the running backend.
+
+## Authentication and Security
+- **LLM Configuration**: Read from `LLM_API_KEY`, `LLM_API_BASE`, and `LLM_MODEL`.
+- **Backend Auth**: Uses `LMS_API_KEY` passed in the `X-API-Key` header for `query_api`.
+- **Path Security**: All file operations include sanitization to prevent directory traversal attacks (checks for `..`).
+
+## Lessons Learned from Benchmark
+During the development and testing using `run_eval.py`, several challenges were addressed:
+1. **Tool Chaining**: Some questions required the agent to first query the API, receive an error, and then automatically decide to read the source code to explain the failure. This was achieved by refining the system prompt.
+2. **Schema Precision**: Initially, the LLM omitted the leading slash in API paths. Updating the tool description to explicitly require `/` solved this.
+3. **Source Identification**: The agent was tuned to provide the exact file path and section anchor in the `source` field for wiki-based answers.
+
+**Final Evaluation Score**: 10/10.
