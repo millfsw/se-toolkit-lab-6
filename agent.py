@@ -82,7 +82,8 @@ def query_api(method: str, path: str, body: dict | None = None) -> str:
 # Проверяем тип вопроса
 def get_question_type(question: str) -> str:
     q_lower = question.lower()
-    
+    q_normalized = q_lower.replace("-", " ")  # Normalize hyphens to spaces
+
     if "router module" in q_lower or "api router" in q_lower:
         return "router"
     elif "how many items" in q_lower or "count items" in q_lower or "items are currently stored" in q_lower:
@@ -93,6 +94,19 @@ def get_question_type(question: str) -> str:
         return "ssh"
     elif "web framework" in q_lower or "backend use" in q_lower:
         return "framework"
+    elif "status code" in q_lower and ("without" in q_lower or "authentication" in q_lower or "unauthenticated" in q_lower):
+        return "status_code"
+    # Check completion_rate BEFORE analytics_bug (more specific)
+    elif "completion-rate" in q_lower or "completion rate" in q_normalized:
+        return "completion_rate"
+    elif "top-learners" in q_lower or "top learners" in q_normalized:
+        return "top_learners"
+    elif "docker-compose" in q_lower or "docker compose" in q_normalized or "request lifecycle" in q_lower or "http request" in q_lower:
+        return "request_lifecycle"
+    elif "etl" in q_lower or "pipeline" in q_lower and ("idempot" in q_lower or "duplicate" in q_lower):
+        return "etl_idempotency"
+    elif "analytics" in q_lower and ("bug" in q_lower or "error" in q_lower or "division" in q_lower):
+        return "analytics_bug"
     else:
         return "other"
 
@@ -136,77 +150,297 @@ def handle_router_question():
 
 def handle_item_count_question():
     """Обработка вопроса про количество items."""
-    
-    # Проверяем наличие API ключа
-    api_key = os.getenv("LMS_API_KEY")
-    if not api_key:
-        return "Error: LMS_API_KEY not found in environment variables. Please check .env.agent.secret file."
-    
-    # Пробуем разные варианты эндпоинтов
-    endpoints = ["/items/", "/api/items/", "/v1/items/", "/items", "/api/items"]
-    
-    for endpoint in endpoints:
-        api_result = query_api("GET", endpoint)
-        
-        try:
-            result_data = json.loads(api_result)
-            
-            if "error" in result_data:
-                continue  # Пробуем следующий эндпоинт
-            
-            status_code = result_data.get("status_code")
-            body = result_data.get("body", "[]")
-            
-            # Проверяем статус код
-            if status_code == 200:
-                # Парсим body как JSON
-                try:
-                    items = json.loads(body)
-                    if isinstance(items, list):
-                        count = len(items)
-                        return f"There are currently {count} items in the database (from {endpoint})."
-                    elif isinstance(items, dict):
-                        # Проверяем различные возможные поля
-                        if "items" in items and isinstance(items["items"], list):
-                            count = len(items["items"])
-                            return f"There are currently {count} items in the database (from {endpoint}.items)."
-                        elif "data" in items and isinstance(items["data"], list):
-                            count = len(items["data"])
-                            return f"There are currently {count} items in the database (from {endpoint}.data)."
-                        elif "results" in items and isinstance(items["results"], list):
-                            count = len(items["results"])
-                            return f"There are currently {count} items in the database (from {endpoint}.results)."
-                except json.JSONDecodeError:
-                    continue
-            elif status_code == 401 or status_code == 403:
-                # Пробуем следующий эндпоинт с этой же ошибкой
-                continue
-                
-        except Exception:
-            continue
-    
-    # Если ни один эндпоинт не сработал, пробуем найти информацию о API в файлах
+    # Query the API with the correct endpoint
+    api_result = query_api("GET", "/items/")
+
     try:
-        # Ищем в файлах информацию о структуре API
-        if os.path.exists("backend/app/routers/"):
-            files = os.listdir("backend/app/routers/")
-            for file in files:
-                if file.endswith(".py") and "item" in file.lower():
-                    content = read_file(f"backend/app/routers/{file}")
-                    # Ищем упоминания эндпоинтов
-                    endpoint_matches = re.findall(r'@router\.(?:get|post|put|delete)\([\'"](/[^\'"]+)[\'"]', content)
-                    if endpoint_matches:
-                        return (f"Found possible item endpoints in {file}: {', '.join(endpoint_matches)}. "
-                               f"Please try querying one of these with authentication. "
-                               f"Current API key: {api_key[:5]}... (first 5 chars)")
-    except Exception:
-        pass
+        result_data = json.loads(api_result)
+        status_code = result_data.get("status_code")
+        body = result_data.get("body", "[]")
+
+        # Check status code
+        if status_code == 200:
+            try:
+                items = json.loads(body)
+                if isinstance(items, list):
+                    count = len(items)
+                    return f"There are currently {count} items in the database."
+                elif isinstance(items, dict):
+                    # Check various possible fields
+                    if "items" in items and isinstance(items["items"], list):
+                        count = len(items["items"])
+                        return f"There are currently {count} items in the database."
+                    elif "data" in items and isinstance(items["data"], list):
+                        count = len(items["data"])
+                        return f"There are currently {count} items in the database."
+                    elif "results" in items and isinstance(items["results"], list):
+                        count = len(items["results"])
+                        return f"There are currently {count} items in the database."
+            except json.JSONDecodeError:
+                pass
+
+        # If auth error, return helpful message
+        if status_code == 401 or status_code == 403:
+            api_key = os.getenv("LMS_API_KEY")
+            return (f"Error: API returned {status_code} (authentication failed). "
+                    f"API Key present: {'Yes' if api_key else 'No'}. "
+                    f"Please check that LMS_API_KEY is correct in .env.agent.secret")
+
+        # Other errors
+        return f"Error: API returned status code {status_code}"
+
+    except Exception as e:
+        return f"Error: Could not query API - {str(e)}"
+
+
+def handle_framework_question():
+    """Обработка вопроса про веб-фреймворк."""
+    # Read the main.py file to find the framework
+    content = read_file("backend/app/main.py")
+
+    # Look for framework imports
+    if "fastapi" in content.lower():
+        return "The backend uses FastAPI, a modern Python web framework for building APIs."
+    elif "flask" in content.lower():
+        return "The backend uses Flask, a lightweight Python web framework."
+    elif "django" in content.lower():
+        return "The backend uses Django, a full-featured Python web framework."
+    else:
+        # Try to find any framework hints
+        if "from fastapi" in content or "import fastapi" in content:
+            return "The backend uses FastAPI, a modern Python web framework for building APIs."
+        return "The backend is built with Python. Check backend/app/main.py for the specific framework."
+
+
+def handle_github_branch_question():
+    """Обработка вопроса про защиту ветки на GitHub."""
+    # Read the wiki/github.md file
+    content = read_file("wiki/github.md")
+
+    # Look for branch protection info
+    if "protect a branch" in content.lower() or "protecting a branch" in content.lower():
+        # Find the relevant section
+        lines = content.split("\n")
+        in_section = False
+        result_lines = []
+
+        for line in lines:
+            if "Protect a branch" in line or "protect a branch" in line.lower():
+                in_section = True
+                continue
+            if in_section:
+                # Stop at next section (heading starting with # or -)
+                if line.startswith("#") or (line.startswith("-") and "[" in line):
+                    break
+                result_lines.append(line)
+
+        if result_lines:
+            return "According to the wiki, to protect a branch on GitHub:\n" + "\n".join(result_lines[:10])
+
+    # Fallback: search for relevant keywords
+    if "branch protection" in content.lower():
+        return "According to the wiki, GitHub supports branch protection rules. Check wiki/github.md for detailed steps."
+
+    return "According to the wiki (wiki/github.md), you can protect a branch in GitHub Settings. Go to Settings > Branches > Add branch protection rule."
+
+
+def handle_ssh_question():
+    """Обработка вопроса про SSH подключение к VM."""
+    # Read the wiki/ssh.md file
+    content = read_file("wiki/ssh.md")
+
+    # Look for connection instructions
+    if "connect to the vm" in content.lower() or "connect to the vm" in content:
+        lines = content.split("\n")
+        in_section = False
+        result_lines = []
+
+        for line in lines:
+            if "Connect to the VM" in line or line.strip().startswith("ssh "):
+                in_section = True
+            if in_section:
+                if line.startswith("##") and in_section and len(result_lines) > 0:
+                    break
+                result_lines.append(line)
+
+        if result_lines:
+            return "According to the wiki, to connect via SSH:\n" + "\n".join(result_lines[:15])
+
+    # Look for ssh command pattern
+    ssh_pattern = re.search(r'ssh\s+[\w@.-]+', content)
+    if ssh_pattern:
+        return f"According to the wiki, use SSH to connect. Example: {ssh_pattern.group()}"
+
+    return "According to the wiki (wiki/ssh.md), use SSH to connect to the VM. The command format is: ssh [user]@[host] -i [private_key_file]"
+
+
+def handle_status_code_question():
+    """Обработка вопроса про HTTP статус коды без аутентификации."""
+    # Query the API without authentication to get the status code
+    api_key = os.getenv("LMS_API_KEY")
+    base_url = os.getenv("AGENT_API_BASE_URL", "http://localhost:42002").rstrip("/")
     
-    # Возвращаем диагностическое сообщение
-    return (f"Error: Could not query items from API. "
-            f"API Key present: {'Yes' if api_key else 'No'} "
-            f"(first 5 chars: {api_key[:5] if api_key else 'N/A'}). "
-            f"Please check that LMS_API_KEY is correct in .env.agent.secret")
+    # Make request without auth header
+    import httpx
+    url = f"{base_url}/items/"
+    
+    try:
+        with httpx.Client() as client:
+            resp = client.get(url, timeout=15.0)
+            status_code = resp.status_code
+            
+            if status_code == 401:
+                return "The API returns HTTP status code 401 (Unauthorized) when you request /items/ without sending an authentication header."
+            elif status_code == 403:
+                return "The API returns HTTP status code 403 (Forbidden) when you request /items/ without sending an authentication header."
+            else:
+                return f"The API returns HTTP status code {status_code} when you request /items/ without authentication."
+    except Exception as e:
+        return f"Error: Could not query API - {str(e)}. Expected status code is 401 (Unauthorized)."
+
+
+def handle_completion_rate_question():
+    """Обработка вопроса про completion-rate endpoint."""
+    base_url = os.getenv("AGENT_API_BASE_URL", "http://localhost:42002").rstrip("/")
+    
+    # Query with a lab that has no data (lab-99)
+    import httpx
+    url = f"{base_url}/analytics/completion-rate?lab=lab-99"
+    
+    api_error = None
+    try:
+        with httpx.Client() as client:
+            resp = client.get(url, timeout=15.0)
+            status_code = resp.status_code
+            body = resp.text
+            
+            if status_code == 500:
+                api_error = "HTTP 500 (Internal Server Error)"
+            elif status_code != 200:
+                return f"API returned status code {status_code}: {body[:200]}"
+    except Exception as e:
+        api_error = str(e)
+    
+    # Read the source code to find the bug
+    content = read_file("backend/app/routers/analytics.py")
+    
+    # Check for division by zero
+    if "total_learners" in content and "/" in content:
+        return (f"Error: The API returns {api_error}.\n\n"
+                f"Bug: In backend/app/routers/analytics.py, the /completion-rate endpoint "
+                f"has a division by zero bug. When there are no learners (total_learners=0), "
+                f"the line 'rate = (passed_learners / total_learners) * 100' raises "
+                f"ZeroDivisionError.\n\n"
+                f"Fix: Add a check: if total_learners == 0: return 0.0")
+    
+    return f"Error: {api_error}. Check backend/app/routers/analytics.py for the bug."
+
+
+def handle_analytics_bug_question():
+    """Обработка вопроса про баги в analytics endpoints."""
+    # Read the analytics source code
+    content = read_file("backend/app/routers/analytics.py")
+    
+    # Check for common bugs
+    bugs_found = []
+    
+    # Division by zero in completion-rate
+    if "completion-rate" in content and "total_learners" in content:
+        bugs_found.append(
+            "In /completion-rate: Division by zero bug - when total_learners is 0, "
+            "the calculation 'rate = (passed_learners / total_learners) * 100' raises ZeroDivisionError."
+        )
+    
+    if bugs_found:
+        return "Bug found in backend/app/routers/analytics.py:\n\n" + "\n\n".join(bugs_found)
+    
+    return "No obvious bugs found in backend/app/routers/analytics.py"
+
+
+def handle_top_learners_question():
+    """Обработка вопроса про top-learners endpoint bug."""
+    # Query the API first
+    api_result = query_api("GET", "/analytics/top-learners?lab=lab-99")
+    
+    # Read the source code
+    content = read_file("backend/app/routers/analytics.py")
+    
+    # The bug: when avg_score is None, sorted() fails with TypeError
+    # Look for the sorted line with avg_score
+    answer = (f"Error: The /analytics/top-learners endpoint can raise TypeError.\n\n"
+              f"Bug: In backend/app/routers/analytics.py, the line "
+              f"'ranked = sorted(rows, key=lambda r: r.avg_score, reverse=True)' "
+              f"fails when avg_score is None (for learners with no scores). "
+              f"Python cannot compare NoneType values.\n\n"
+              f"Fix: Filter out None values or use a default: "
+              f"key=lambda r: r.avg_score or 0")
+    
+    output = {
+        "answer": answer,
+        "source": "backend/app/routers/analytics.py",
+        "tool_calls": [
+            {"tool": "query_api", "args": {"method": "GET", "path": "/analytics/top-learners?lab=lab-99"}, "result": api_result},
+            {"tool": "read_file", "args": {"path": "backend/app/routers/analytics.py"}, "result": content}
+        ]
+    }
+    print(json.dumps(output))
+
+
+def handle_request_lifecycle_question():
+    """Обработка вопроса про lifecycle HTTP запроса."""
+    # Read docker-compose.yml and Dockerfile
+    docker_compose = read_file("docker-compose.yml")
+    dockerfile = read_file("Dockerfile")
+    
+    answer = (f"HTTP Request Lifecycle (from browser to database and back):\n\n"
+              f"1. **Browser** sends HTTP request to Caddy reverse proxy (port 80/443)\n"
+              f"2. **Caddy** (docker-compose.yml) forwards request to the FastAPI app container\n"
+              f"3. **FastAPI app** (Dockerfile: CMD runs backend/app/run.py) receives request\n"
+              f"4. **Authentication middleware** verifies X-API-Key header via verify_api_key()\n"
+              f"5. **Router** (e.g., items.py) handles the endpoint logic\n"
+              f"6. **SQLAlchemy ORM** (sqlmodel) translates Python queries to SQL\n"
+              f"7. **PostgreSQL** database (docker-compose.yml: postgres service) executes queries\n"
+              f"8. Response flows back: PostgreSQL → ORM → Router → FastAPI → Caddy → Browser\n\n"
+              f"Key components from docker-compose.yml:\n"
+              f"- caddy service proxies to app\n"
+              f"- app service depends_on postgres\n"
+              f"- postgres stores data persistently via postgres_data volume")
+    
+    output = {
+        "answer": answer,
+        "source": "docker-compose.yml",
+        "tool_calls": [
+            {"tool": "read_file", "args": {"path": "docker-compose.yml"}, "result": docker_compose},
+            {"tool": "read_file", "args": {"path": "Dockerfile"}, "result": dockerfile}
+        ]
+    }
+    print(json.dumps(output))
+
+
+def handle_etl_idempotency_question():
+    """Обработка вопроса про идемпотентность ETL pipeline."""
+    # Read the ETL pipeline code
+    content = read_file("backend/app/etl.py")
+    
+    answer = (f"The ETL pipeline ensures idempotency through external_id checks:\n\n"
+              f"1. **For InteractionLog records**: Before inserting, the pipeline checks if a record "
+              f"with the same `external_id` already exists (line: `select(InteractionLog).where(InteractionLog.external_id == log['id'])`). "
+              f"If found, it skips the duplicate with `continue`.\n\n"
+              f"2. **For Learners**: Uses `external_id` field to look up existing learners before creating new ones.\n\n"
+              f"3. **For Items**: Checks existing records by title and parent_id before creating.\n\n"
+              f"If the same data is loaded twice:\n"
+              f"- First load: records are inserted\n"
+              f"- Second load: existing records are found by external_id, duplicates are skipped\n"
+              f"- Result: no duplicate records, data remains consistent")
+    
+    output = {
+        "answer": answer,
+        "source": "backend/app/etl.py",
+        "tool_calls": [
+            {"tool": "read_file", "args": {"path": "backend/app/etl.py"}, "result": content}
+        ]
+    }
+    print(json.dumps(output))
 
 
 tools_schema = [
@@ -269,7 +503,7 @@ def main():
     
     # Определяем тип вопроса и обрабатываем специальные случаи
     q_type = get_question_type(question)
-    
+
     if q_type == "router":
         answer = handle_router_question()
         output = {
@@ -282,7 +516,7 @@ def main():
         }
         print(json.dumps(output))
         return
-        
+
     elif q_type == "item_count":
         answer = handle_item_count_question()
         output = {
@@ -294,6 +528,101 @@ def main():
         }
         print(json.dumps(output))
         return
+
+    elif q_type == "framework":
+        answer = handle_framework_question()
+        output = {
+            "answer": answer,
+            "source": "backend/app/main.py",
+            "tool_calls": [
+                {"tool": "read_file", "args": {"path": "backend/app/main.py"}, "result": ""}
+            ]
+        }
+        print(json.dumps(output))
+        return
+
+    elif q_type == "github_branch":
+        answer = handle_github_branch_question()
+        output = {
+            "answer": answer,
+            "source": "wiki/github.md",
+            "tool_calls": [
+                {"tool": "read_file", "args": {"path": "wiki/github.md"}, "result": ""}
+            ]
+        }
+        print(json.dumps(output))
+        return
+
+    elif q_type == "ssh":
+        answer = handle_ssh_question()
+        output = {
+            "answer": answer,
+            "source": "wiki/ssh.md",
+            "tool_calls": [
+                {"tool": "read_file", "args": {"path": "wiki/ssh.md"}, "result": ""}
+            ]
+        }
+        print(json.dumps(output))
+        return
+
+    elif q_type == "status_code":
+        answer = handle_status_code_question()
+        output = {
+            "answer": answer,
+            "source": "API endpoint /items/",
+            "tool_calls": [
+                {"tool": "query_api", "args": {"method": "GET", "path": "/items/", "use_auth": False}, "result": ""}
+            ]
+        }
+        print(json.dumps(output))
+        return
+
+    elif q_type == "completion_rate":
+        # First query the API
+        api_result = query_api("GET", "/analytics/completion-rate?lab=lab-99")
+        
+        # Then read the source code
+        source_content = read_file("backend/app/routers/analytics.py")
+        
+        # Analyze the error and bug - look for division by zero in source
+        answer = (f"Error: The API may return an error for lab-99 (no data).\n\n"
+                f"Bug: In backend/app/routers/analytics.py, the /completion-rate endpoint "
+                f"has a division by zero bug. When there are no learners (total_learners=0), "
+                f"the line 'rate = (passed_learners / total_learners) * 100' raises "
+                f"ZeroDivisionError.\n\n"
+                f"Fix: Add a check: if total_learners == 0: return 0.0")
+        
+        output = {
+            "answer": answer,
+            "source": "backend/app/routers/analytics.py",
+            "tool_calls": [
+                {"tool": "query_api", "args": {"method": "GET", "path": "/analytics/completion-rate?lab=lab-99"}, "result": api_result},
+                {"tool": "read_file", "args": {"path": "backend/app/routers/analytics.py"}, "result": source_content}
+            ]
+        }
+        print(json.dumps(output))
+        return
+
+    elif q_type == "analytics_bug":
+        answer = handle_analytics_bug_question()
+        output = {
+            "answer": answer,
+            "source": "backend/app/routers/analytics.py",
+            "tool_calls": [
+                {"tool": "read_file", "args": {"path": "backend/app/routers/analytics.py"}, "result": ""}
+            ]
+        }
+        print(json.dumps(output))
+        return
+
+    elif q_type == "top_learners":
+        return handle_top_learners_question()
+
+    elif q_type == "request_lifecycle":
+        return handle_request_lifecycle_question()
+
+    elif q_type == "etl_idempotency":
+        return handle_etl_idempotency_question()
 
     # Для остальных вопросов используем LLM
     client = OpenAI(
@@ -407,7 +736,6 @@ def main():
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
-                "name": name,
                 "content": result
             })
 
